@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(MT6701, CONFIG_SENSOR_LOG_LEVEL);
 
 #define MT6701_FULL_ANGLE (360)
 #define MT6701_RES        (16384LL)
-#define MT6701_SCALE      (100000LL)
+#define MT6701_SCALE      (1000000LL)
 
 struct mt6701_config {
 	struct spi_dt_spec spi;
@@ -40,7 +40,7 @@ union mt6701_status {
 };
 
 struct mt6701_data {
-	uint16_t raw_angle;
+	uint16_t position;
   union mt6701_status status;
 };
 
@@ -93,7 +93,7 @@ static inline int mt6701_sample_fetch(const struct device *dev,
 
     // if (buffer.crc == calc_crc)
     {
-      data->raw_angle = buffer.angle;
+      data->position = buffer.angle;
       data->status.raw = buffer.status;
     }
 	}
@@ -107,7 +107,7 @@ static int mt6701_channel_get(const struct device *dev, enum sensor_channel chan
 	struct mt6701_data *data = dev->data;
 
 	if (chan == SENSOR_CHAN_ROTATION) {
-    int64_t tmp = (int64_t)data->raw_angle * MT6701_FULL_ANGLE; 
+    int64_t tmp = (int64_t)data->position * MT6701_FULL_ANGLE; 
 		val->val1 = tmp / MT6701_RES;
 		val->val2 = (tmp * MT6701_SCALE / MT6701_RES) % MT6701_SCALE;
 	} else {
@@ -125,11 +125,16 @@ static DEVICE_API(sensor, mt6701_api) = {
 int mt6701_init(const struct device *dev)
 {
 	const struct mt6701_config *config = dev->config;
+	struct mt6701_data *data = dev->data;
+
+	data->position = 0;
 
 	if (!spi_is_ready_dt(&config->spi)) {
 		LOG_ERR("SPI bus is not ready");
 		return -ENODEV;
 	}
+
+	LOG_INF("Device %s initialized", dev->name);
 
 	return 0;
 }
