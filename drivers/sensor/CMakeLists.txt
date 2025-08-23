@@ -1,0 +1,1 @@
+add_subdirectory_ifdef(CONFIG_MT6701 mt6701)

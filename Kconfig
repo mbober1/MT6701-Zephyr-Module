@@ -1,0 +1,5 @@
+menu "MT6701 zephyr module"
+
+rsource "drivers/Kconfig"
+
+endmenu
