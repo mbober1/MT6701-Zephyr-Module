@@ -13,6 +13,10 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(MT6701, CONFIG_SENSOR_LOG_LEVEL);
 
+#define MT6701_FULL_ANGLE (360)
+#define MT6701_RES        (16384LL)
+#define MT6701_SCALE      (100000LL)
+
 struct mt6701_config {
 	struct spi_dt_spec spi;
 };
@@ -84,7 +88,7 @@ static inline int mt6701_sample_fetch(const struct device *dev,
 
   ret = mt6701_read(dev, &buffer);
 
-	if (0 == ret) {
+	if (0 == ret) { // TODO: fix CRC
 		// uint8_t calc_crc = mt6701_crc_calc(buffer.angle, buffer.status);
 
     // if (buffer.crc == calc_crc)
@@ -100,18 +104,15 @@ static inline int mt6701_sample_fetch(const struct device *dev,
 static int mt6701_channel_get(const struct device *dev, enum sensor_channel chan,
 			      struct sensor_value *val)
 {
-	// struct mt6701_data *data = dev->data;
+	struct mt6701_data *data = dev->data;
 
-	// if (chan == SENSOR_CHAN_ROTATION) {
-  //   LOG_INF("");
-	// 	// val->val1 = ((int32_t)dev_data->position * AS5600_FULL_ANGLE) /
-	// 	// 					AS5600_PULSES_PER_REV;
-
-	// 	// val->val2 = (((int32_t)dev_data->position * AS5600_FULL_ANGLE) %
-	// 	// 	     AS5600_PULSES_PER_REV) * (AS5600_MILLION_UNIT / AS5600_PULSES_PER_REV);
-	// } else {
-	// 	return -ENOTSUP;
-	// }
+	if (chan == SENSOR_CHAN_ROTATION) {
+    int64_t tmp = (int64_t)data->raw_angle * MT6701_FULL_ANGLE; 
+		val->val1 = tmp / MT6701_RES;
+		val->val2 = (tmp * MT6701_SCALE / MT6701_RES) % MT6701_SCALE;
+	} else {
+		return -ENOTSUP;
+	}
 
 	return 0;
 }
