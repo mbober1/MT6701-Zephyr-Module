@@ -8,7 +8,6 @@
 
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/sys/byteorder.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(MT6701, CONFIG_SENSOR_LOG_LEVEL);
