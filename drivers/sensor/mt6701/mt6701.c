@@ -25,8 +25,11 @@ struct mt6701_config {
 struct mt6701_payload {
   uint32_t : 1;
   uint32_t angle: 14;
-  uint32_t status: 4;
+	#if defined(CONFIG_MT6701_ENABLE_CRC)
+  uint32_t status: 8;
   uint32_t crc: 6;
+  uint32_t test: 11; // TODO
+	#endif
 } __attribute__((__packed__));
 
 struct mt6701_status_fields {
@@ -40,31 +43,44 @@ union mt6701_status {
   uint8_t raw;
 };
 
+struct mt6701_sample {
+	uint_fast16_t position;
+	int64_t timestamp;
+};
+
 struct mt6701_data {
-	bool last_fetch_success;
 	float velocity;
 
-	uint_fast16_t position;
-	int64_t last_read_timestamp;
+	uint_fast32_t sample_counter;
+	struct mt6701_sample sample[2];
   union mt6701_status status;
 };
 
+#if defined(CONFIG_MT6701_CRC)
+// CRC-6 lookup table for polynomial X^6 + X^1 + 1
+const uint8_t crcTable[64] = {
+	0x00, 0x03, 0x06, 0x05, 0x0C, 0x0F, 0x0A, 0x09,
+	0x18, 0x1B, 0x1E, 0x1D, 0x14, 0x17, 0x12, 0x11,
+	0x30, 0x33, 0x36, 0x35, 0x3C, 0x3F, 0x3A, 0x39,
+	0x28, 0x2B, 0x2E, 0x2D, 0x24, 0x27, 0x22, 0x21,
+	0x23, 0x20, 0x25, 0x26, 0x2F, 0x2C, 0x29, 0x2A,
+	0x3B, 0x38, 0x3D, 0x3E, 0x37, 0x34, 0x31, 0x32,
+	0x13, 0x10, 0x15, 0x16, 0x1F, 0x1C, 0x19, 0x1A,
+	0x0B, 0x08, 0x0D, 0x0E, 0x07, 0x04, 0x01, 0x02
+};
+
 uint8_t mt6701_crc_calc(uint_fast16_t angle, uint8_t mag) {
-    uint32_t data = ((uint32_t)angle << 4) | (mag & 0x0F); // 18-bit stream
-    uint8_t crc = 0;
-    const uint8_t poly = 0x43; // x^6 + x + 1
-
-    for (int i = 17; i >= 0; i--) { // MSB-first
-        uint8_t bit = (data >> i) & 0x01;
-        uint8_t feedback = bit ^ ((crc >> 5) & 0x01);
-        crc = (crc << 1) & 0x3F;
-        if (feedback) {
-            crc ^= poly;
-        }
-    }
-
-    return crc;
+	uint32_t data = ((uint32_t)angle << 4) | (mag & 0x0F); // 18-bit stream
+	// Combine the 14-bit angle data and 4-bit status into 18 bits
+	uint32_t combinedData = data >> 6;  // Shift out the 6-bit CRC
+	uint8_t crc = 0;
+	// Process the data 6 bits at a time (from MSB to LSB)
+	crc = crcTable[(crc ^ (combinedData >> 12)) & 0x3F];  // First 6 bits
+	crc = crcTable[(crc ^ (combinedData >> 6)) & 0x3F];   // Second 6 bits
+	crc = crcTable[(crc ^ combinedData) & 0x3F];          // Last 6 bits
+	return crc;
 }
+#endif
 
 static inline int mt6701_read(const struct device *dev, 
                       struct mt6701_payload *buffer)
@@ -73,7 +89,7 @@ static inline int mt6701_read(const struct device *dev,
 
 	const struct spi_buf rx_buf = {
 		.buf = buffer,
-		.len = 4U
+		.len = sizeof(struct mt6701_payload)
 	};
 
 	const struct spi_buf_set rx_bufs = {
@@ -149,26 +165,19 @@ static inline int mt6701_sample_fetch(const struct device *dev,
   ret = mt6701_read(dev, &buffer);
 	int64_t timestamp = k_uptime_ticks();
 
-	if (0 == ret) { // TODO: fix CRC
-		// uint8_t calc_crc = mt6701_crc_calc(buffer.angle, buffer.status);
+	if (0 == ret) 
+	{
 
-    // if (buffer.crc == calc_crc)
+	#if defined(CONFIG_MT6701_ENABLE_CRC)
+		uint8_t calc_crc = mt6701_crc_calc(buffer.angle, buffer.status);
+			// data->status.raw = buffer.status;
+    if (buffer.crc == calc_crc)
+	#endif
     {
-			uint_fast16_t new_position = buffer.angle;
-
-			if (true == data->last_fetch_success)
-			{
-				uint_fast16_t prev_position = data->position;
-				int_fast16_t position_diff = mt6701_calc_diff(prev_position, new_position);
-				int64_t time_diff = timestamp - data->last_read_timestamp;
-				float new_velocity = mt6701_calc_velocity(position_diff, time_diff);
-				data->velocity = mt6701_lag(new_velocity, data->velocity);
-			}
-			
-			data->position = new_position;
-			data->status.raw = buffer.status;
-			data->last_read_timestamp = timestamp;
-			data->last_fetch_success = true;
+			uint_fast16_t new_sample = data->sample_counter & 1;
+			data->sample[new_sample].position = buffer.angle;
+			data->sample[new_sample].timestamp = timestamp;
+			data->sample_counter++;
     }
 	}
 
@@ -179,14 +188,41 @@ static int mt6701_channel_get(const struct device *dev, enum sensor_channel chan
 			      struct sensor_value *val)
 {
 	struct mt6701_data *data = dev->data;
+	uint_fast16_t prev_sample = data->sample_counter & 1;
+	uint_fast16_t latest_sample = prev_sample ^ 1;
 
 	if (chan == SENSOR_CHAN_ROTATION)
 	{
-    mt6701_raw_to_angle(data->position, val);
-	}	
+    mt6701_raw_to_angle(data->sample[latest_sample].position, val);
+	}
 	else if (chan == SENSOR_CHAN_RPM)
 	{
-		sensor_value_from_float(val, data->velocity);
+		if (data->sample_counter > 1)
+		{
+			uint_fast16_t prev_position = data->sample[prev_sample].position;
+			int64_t prev_timestamp = data->sample[prev_sample].timestamp;
+
+			uint_fast16_t latest_position = data->sample[latest_sample].position;
+			int64_t latest_timestamp = data->sample[latest_sample].timestamp;
+
+			int_fast16_t position_diff = mt6701_calc_diff(prev_position, latest_position);
+			int64_t time_diff = latest_timestamp - prev_timestamp;
+
+			float velocity = mt6701_calc_velocity(position_diff, time_diff);
+
+			#if defined(CONFIG_MT6701_ENABLE_LAG)
+			data->velocity = mt6701_lag(velocity, data->velocity);
+			#else
+			data->velocity = velocity;
+			#endif
+			
+			sensor_value_from_float(val, data->velocity);
+		}
+		else
+		{
+			val->val1 = 0;
+			val->val2 = 0;
+		}
 	}
 	else {
 		return -ENOTSUP;
@@ -205,11 +241,10 @@ int mt6701_init(const struct device *dev)
 	const struct mt6701_config *config = dev->config;
 	struct mt6701_data *data = dev->data;
 
-	data->last_fetch_success = false;
 	data->velocity = 0.0f;
-	data->position = 0;
-	data->last_read_timestamp = 0;
+	data->sample_counter = 0;
 	data->status.raw = 0;
+	memset(data->sample, 0, sizeof(data->sample));
 
 	if (!spi_is_ready_dt(&config->spi)) {
 		LOG_ERR("SPI bus is not ready");
