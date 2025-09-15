@@ -4,19 +4,21 @@
 menuconfig MT6701
 	bool "MT6701 Differential Hall magnetic angle encoder"
 	default y
-	depends on DT_HAS_MT6701_ENABLED
+	depends on DT_HAS_NOVOSENSE_MT6701_ENABLED
 	select SPI
+	select RTIO_WORKQ if SENSOR_ASYNC_API
 	help
 	  Enable driver for MT6701 Differential Hall magnetic angle encoder.
 
 if MT6701
 
 config MT6701_STREAM
-	bool "Use hardware FIFO to stream data"
+	bool "Use FIFO to stream data"
 	default y
 	depends on SPI_RTIO
+	depends on SENSOR_ASYNC_API
 	help
-	  Use this config option to enable streaming sensor data via RTIO subsystem.
+	  Use this configuration option to enable streaming sensor data via RTIO.
 
 config MT6701_ENABLE_CRC
 	bool "Use CRC"

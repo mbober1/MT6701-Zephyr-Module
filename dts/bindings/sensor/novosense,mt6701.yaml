@@ -4,6 +4,6 @@
 description: |
     Novosense MT6701 Differential Hall magnetic angle encoder
 
-compatible: "mt6701"
+compatible: "novosense,mt6701"
 
 include: [sensor-device.yaml, spi-device.yaml]
