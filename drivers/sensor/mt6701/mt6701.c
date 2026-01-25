@@ -19,7 +19,6 @@ LOG_MODULE_REGISTER(MT6701, CONFIG_SENSOR_LOG_LEVEL);
 #define MT6701_FULL_ANGLE_RAD 	(2)
 #define MT6701_RES        			(16384LL)
 #define MT6701_SCALE      			(1000000LL)
-#define MT6701_LAG      				(3.0f)
 #define MT6701_START_UP_TIME_MS (32)
 
 
@@ -115,13 +114,15 @@ static inline float mt6701_calc_velocity(const float diff, const float ticks)
 	}
 }
 
+#if defined(CONFIG_MT6701_ENABLE_LAG)
 static inline float mt6701_lag(const float new_val, const float old_val)
 {
-	static const float new_mul = MT6701_LAG / 100;
+	static const float new_mul = (float)CONFIG_MT6701_LAG_VALUE / 100000;
 	static const float old_mult = 1.f - new_mul;
 
 	return old_mult * old_val + new_mul * new_val;
 }
+#endif
 
 
 

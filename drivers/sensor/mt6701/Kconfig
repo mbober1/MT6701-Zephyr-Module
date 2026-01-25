@@ -28,8 +28,16 @@ config MT6701_ENABLE_CRC
 
 config MT6701_ENABLE_LAG
 	bool "Enable smoothing"
-	default y
+	default n
 	help
-	  Use this config option to enable data smoothing.
+	  Use this config option to enable velocity data smoothing.
+
+if MT6701_ENABLE_LAG
+config MT6701_LAG_VALUE
+	int "Smoothing value"
+	default 1000
+	help
+	  Set how much you want to smooth the velocity result.
+endif # MT6701_ENABLE_LAG
 
 endif # MT6701
