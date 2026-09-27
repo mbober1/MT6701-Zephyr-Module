@@ -160,6 +160,10 @@ int mt6701_sample_fetch(const struct device *dev,
 				data->_time_diff = new_sample->timestamp - prev_sample->timestamp;
 				data->absolute_position += data->_position_diff;
 			}
+			else
+			{
+				data->absolute_position = angle;
+			}
 
 			data->_sample_counter++;
     }
